@@ -1,0 +1,39 @@
+{
+  "name": "adb-plugin-counting",
+  "displayName": "Counting",
+  "version": "1.0.0",
+  "description": "Number counting game. Users take turns counting sequentially. Wrong numbers or double-posting resets the count.",
+  "author": "DeadIndian",
+  "main": "index.js",
+  "requiresRestart": false,
+  "permissions": [
+    "db.read",
+    "db.write",
+    "commands.register",
+    "messages.read"
+  ],
+  "discordPermissions": [
+    "SendMessages",
+    "ManageMessages",
+    "AddReactions"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "channel": {
+        "type": "string",
+        "description": "Channel ID where counting happens"
+      },
+      "resetOnFail": {
+        "type": "boolean",
+        "default": true,
+        "description": "Reset to 0 on wrong count"
+      },
+      "milestones": {
+        "type": "string",
+        "default": "10,25,50,100,250,500,1000",
+        "description": "Comma-separated milestones that trigger a celebratory message"
+      }
+    }
+  }
+}
