@@ -1,39 +1,41 @@
 {
-  "name": "adb-plugin-counting",
-  "displayName": "Counting",
-  "version": "1.0.0",
-  "description": "Number counting game. Users take turns counting sequentially. Wrong numbers or double-posting resets the count.",
-  "author": "DeadIndian",
-  "main": "index.js",
-  "requiresRestart": false,
-  "permissions": [
-    "db.read",
-    "db.write",
-    "commands.register",
-    "messages.read"
-  ],
-  "discordPermissions": [
-    "SendMessages",
-    "ManageMessages",
-    "AddReactions"
-  ],
-  "configSchema": {
-    "type": "object",
-    "properties": {
-      "channel": {
-        "type": "string",
-        "description": "Channel ID where counting happens"
-      },
-      "resetOnFail": {
-        "type": "boolean",
-        "default": true,
-        "description": "Reset to 0 on wrong count"
-      },
-      "milestones": {
-        "type": "string",
-        "default": "10,25,50,100,250,500,1000",
-        "description": "Comma-separated milestones that trigger a celebratory message"
-      }
-    }
-  }
+	"name": "adb-plugin-counting",
+	"displayName": "Counting",
+	"version": "1.1.0",
+	"description": "Number counting game. Users take turns counting sequentially. Wrong numbers or double-posting resets the count.",
+	"author": "DeadIndian",
+	"main": "index.js",
+	"requiresRestart": true,
+	"isolation": false,
+	"manifestVersion": 2,
+	"process": {
+		"model": "persistent",
+		"maxExecutionMs": 10000,
+		"memoryMb": 256,
+		"persistentReason": "Runs un-isolated (system:raw-client) to police the counting channel on every message — delete invalid counts, react to valid ones, and read live message objects — none of which the sandboxed RPC surface exposes."
+	},
+	"capabilities": {
+		"system": ["raw-client"],
+		"storage": ["own-collection"],
+		"discord": ["SendMessages", "ManageMessages", "AddReactions"]
+	},
+	"permissions": {
+		"system": ["raw-client"],
+		"storage": ["own-collection"],
+		"discord": ["SendMessages", "ManageMessages", "AddReactions"],
+		"network": { "outbound": [] },
+		"filesystem": { "read": [], "write": [] },
+		"childProcess": false,
+		"nativeAddons": false
+	},
+	"declaredDependencies": [],
+	"discordPermissions": ["SendMessages", "ManageMessages", "AddReactions"],
+	"configSchema": {
+		"type": "object",
+		"properties": {
+			"channel": { "type": "string", "description": "Channel ID where counting happens" },
+			"resetOnFail": { "type": "boolean", "default": true, "description": "Reset to 0 on wrong count" },
+			"milestones": { "type": "string", "default": "10,25,50,100,250,500,1000", "description": "Comma-separated milestones that trigger a celebratory message" }
+		}
+	}
 }
