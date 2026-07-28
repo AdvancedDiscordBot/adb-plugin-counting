@@ -1,7 +1,7 @@
 {
 	"name": "adb-plugin-counting",
 	"displayName": "Counting",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Number counting game. Users take turns counting sequentially. Wrong numbers or double-posting resets the count.",
 	"author": "DeadIndian",
 	"main": "index.js",
@@ -23,12 +23,24 @@
 		"system": ["raw-client"],
 		"storage": ["own-collection"],
 		"discord": ["SendMessages", "ManageMessages", "AddReactions"],
+		"hooks": ["subscribe"],
 		"network": { "outbound": [] },
 		"filesystem": { "read": [], "write": [] },
 		"childProcess": false,
 		"nativeAddons": false
 	},
 	"declaredDependencies": [],
+	"engines": {
+		"core": ">=2.0.0",
+		"plugins": { "administration": ">=2.0.0" }
+	},
+	"settings": {
+		"commandPermissions": true,
+		"schema": [
+			{ "key": "channel", "type": "channel", "label": "Counting channel" },
+			{ "key": "resetOnFail", "type": "boolean", "label": "Reset count on mistake", "default": true }
+		]
+	},
 	"discordPermissions": ["SendMessages", "ManageMessages", "AddReactions"],
 	"configSchema": {
 		"type": "object",
