@@ -61,7 +61,10 @@ async function run() {
 
 	const Model = models.get("plugin_adb-plugin-counting_counting");
 	assert(!!Model, "counting model defined");
+	const UserStats = models.get("plugin_adb-plugin-counting_userStats");
+	assert(!!UserStats, "userStats model defined");
 	const getData = () => Model.findOne({ guildId: GUILD });
+	const getUser = (id) => UserStats.findOne({ guildId: GUILD, userId: id });
 
 	// Seed the counting channel via the /counting channel subcommand (bot-faithful).
 	const cmd = registeredCommands.get("counting");
@@ -84,6 +87,10 @@ async function run() {
 	assert(d.lastUserId === "A", "lastUserId recorded");
 	assert(m1._calls.reacted.includes("✅"), "valid count reacts ✅");
 	assert(d.totalCounted === 1, "totalCounted incremented");
+	let u = await getUser("A");
+	assert(u.correct === 1 && u.fails === 0, "userStats: correct count increments correct");
+	assert(u.highest === 1, "userStats: highest tracks first count");
+	assert(u.lastCountedAt instanceof Date, "userStats: lastCountedAt set");
 
 	// --- same user twice is blocked, count unchanged ---
 	const m2 = fakeMessage({ id: "A", content: "2" });
@@ -92,6 +99,8 @@ async function run() {
 	assert(d.count === 1, "same user twice does not advance count");
 	assert(m2._calls.deleted === true, "same-user message deleted");
 	assert(m2._calls.reacted.length === 0, "same-user message not reacted");
+	u = await getUser("A");
+	assert(u.fails === 1 && u.correct === 1, "userStats: duplicate user increments fails");
 
 	// --- different user with correct number advances ---
 	const m3 = fakeMessage({ id: "B", content: "2" });
@@ -108,6 +117,8 @@ async function run() {
 	assert(d.lastUserId === null, "lastUserId cleared on reset");
 	assert(m4._calls.sent.length === 1, "reset announces failure in channel");
 	assert(m4._calls.deleted === true, "wrong-number message deleted");
+	u = await getUser("A");
+	assert(u.fails === 2 && u.correct === 1, "userStats: wrong number increments fails");
 
 	// --- non-numeric message is deleted, no state change ---
 	const m5 = fakeMessage({ id: "A", content: "hello" });
@@ -140,6 +151,14 @@ async function run() {
 	assert(d.count === 10, "climbed to 10");
 	assert(d.highestCount === 10, "highestCount tracks the peak");
 	assert(milestoneAnnounced === true, "milestone 10 announced");
+
+	// --- userStats final state across the full climb ---
+	// A: initial "1" + even climb numbers (2,4,6,8,10) = 6 correct, 2 fails (dup + wrong), peak 10.
+	// B: "2" after A's dup + odd climb numbers (1,3,5,7,9) = 6 correct, peak 9.
+	u = await getUser("A");
+	const ub = await getUser("B");
+	assert(u.correct === 6 && u.fails === 2 && u.highest === 10, "userStats: user A totals (6 correct, 2 fails, peak 10)");
+	assert(ub.correct === 6 && ub.fails === 0 && ub.highest === 9, "userStats: user B totals (6 correct, 0 fails, peak 9)");
 
 	console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
 	process.exit(failed > 0 ? 1 : 0);

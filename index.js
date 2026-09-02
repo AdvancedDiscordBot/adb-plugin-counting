@@ -1,5 +1,6 @@
 const { createCountingCommand } = require("./commands/counting");
 const countingSchema = require("./models/counting");
+const userStatsSchema = require("./models/userStats");
 
 function getDefaultConfig() {
 	return {
@@ -10,6 +11,7 @@ function getDefaultConfig() {
 
 async function load(ctx) {
 	const CountingModel = ctx.defineModel("counting", countingSchema);
+	const UserStatsModel = ctx.defineModel("userStats", userStatsSchema);
 
 	ctx.registerCommand(createCountingCommand(CountingModel));
 
@@ -33,10 +35,13 @@ async function load(ctx) {
 			return;
 		}
 
+		const userQuery = { guildId: message.guildId, userId: message.author.id };
+
 		// Must be exactly the next number
 		const expected = data.count + 1;
 
 		if (num !== expected) {
+			await UserStatsModel.findOneAndUpdate(userQuery, { $inc: { fails: 1 } }, { upsert: true });
 			if (cfg.resetOnFail) {
 				data.count = 0;
 				data.resets += 1;
@@ -54,6 +59,7 @@ async function load(ctx) {
 
 		// Must not be the same person twice
 		if (data.lastUserId === message.author.id) {
+			await UserStatsModel.findOneAndUpdate(userQuery, { $inc: { fails: 1 } }, { upsert: true });
 			try { await message.delete(); } catch {}
 			const warnMsg = await message.channel.send(
 				`${message.author}, you can't count twice in a row! Count stays at **${data.count}**.`
@@ -66,6 +72,15 @@ async function load(ctx) {
 		data.count = num;
 		data.lastUserId = message.author.id;
 		data.totalCounted += 1;
+
+		const stats = await UserStatsModel.findOneAndUpdate(
+			userQuery,
+			{ $inc: { correct: 1 }, $set: { lastCountedAt: new Date() } },
+			{ upsert: true }
+		);
+		if (num > (stats.highest || 0)) {
+			await UserStatsModel.updateOne(userQuery, { $set: { highest: num } });
+		}
 
 		if (num > data.highestCount) {
 			data.highestCount = num;
