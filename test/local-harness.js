@@ -27,13 +27,13 @@ const GUILD = "guild-1";
 const CHAN = "count-chan";
 
 // Fake message with the fields index.js's handler reads. Records side effects.
-function fakeMessage({ id = "userA", bot = false, content, channelId = CHAN }) {
+function fakeMessage({ id = "userA", bot = false, content, channelId = CHAN, guildId = GUILD }) {
 	const calls = { deleted: false, reacted: [], sent: [] };
 	const author = { bot, id, toString: () => `<@${id}>` };
 	return {
 		author,
-		guild: { id: GUILD },
-		guildId: GUILD,
+		guild: { id: guildId },
+		guildId,
 		channelId,
 		content,
 		channel: {
@@ -69,6 +69,12 @@ async function run() {
 	// Seed the counting channel via the /counting channel subcommand (bot-faithful).
 	const cmd = registeredCommands.get("counting");
 	const replies = [];
+	let acknowledged = false;
+	const getConfig = ctx.db.getPluginConfig;
+	ctx.db.getPluginConfig = async (...args) => {
+		assert(acknowledged, "counting command acknowledges before database work");
+		return getConfig(...args);
+	};
 	await cmd.execute({
 		guildId: GUILD,
 		options: {
@@ -76,7 +82,10 @@ async function run() {
 			getChannel: () => ({ id: CHAN, toString: () => `#${CHAN}` }),
 		},
 		reply: async (p) => replies.push(p),
+		deferReply: async () => { acknowledged = true; },
+		editReply: async (p) => replies.push(p),
 	});
+	ctx.db.getPluginConfig = getConfig;
 	assert((await getData()).channelId === CHAN, "channel subcommand sets channelId");
 
 	// --- correct number advances the count ---
@@ -159,6 +168,64 @@ async function run() {
 	const ub = await getUser("B");
 	assert(u.correct === 6 && u.fails === 2 && u.highest === 10, "userStats: user A totals (6 correct, 2 fails, peak 10)");
 	assert(ub.correct === 6 && ub.fails === 0 && ub.highest === 9, "userStats: user B totals (6 correct, 0 fails, peak 9)");
+
+	// Parallel gateway events must observe the previous event's saved state.
+	await Model.updateOne({ guildId: GUILD }, { count: 0, lastUserId: null });
+	const rapid = [1, 2, 3, 4].map((n) => fakeMessage({ id: users[n % 2], content: String(n) }));
+	await Promise.all(rapid.map((message) => emitEvent("messageCreate", message)));
+	d = await getData();
+	assert(d.count === 4 && rapid.every((m) => m._calls.reacted.length === 1), "parallel counts preserve arrival order without false resets");
+
+	await Model.updateOne({ guildId: GUILD }, { count: 0, lastUserId: null });
+	await ctx.db.updatePluginConfig(GUILD, "adb-plugin-counting", { resetOnFail: false, milestones: "2,4" });
+	await emitEvent("messageCreate", fakeMessage({ id: "A", content: "1" }));
+	const customMilestone = fakeMessage({ id: "B", content: "2" });
+	await emitEvent("messageCreate", customMilestone);
+	assert(customMilestone._calls.sent.length === 1, "configured comma-separated milestone is announced");
+	await emitEvent("messageCreate", fakeMessage({ id: "A", content: "42" }));
+	assert((await getData()).count === 2, "resetOnFail=false preserves the current count");
+
+	await ctx.db.updatePluginConfig(GUILD, "adb-plugin-counting", { milestones: "10" });
+	await Model.updateOne({ guildId: GUILD }, { count: 9, lastUserId: "B" });
+	const errors = [];
+	ctx.logger.error = (...args) => errors.push(args);
+	const sendFailure = fakeMessage({ id: "A", content: "10" });
+	sendFailure.channel.send = async () => { throw new Error("Discord unavailable"); };
+	await emitEvent("messageCreate", sendFailure).catch(() => {});
+	assert((await getData()).count === 10, "failed milestone send does not roll back an accepted count");
+	await emitEvent("messageCreate", fakeMessage({ id: "B", content: "11" }));
+	assert((await getData()).count === 11, "later events still run after a Discord failure");
+
+	await ctx.db.updatePluginConfig(GUILD, "adb-plugin-counting", { channel: "dashboard-channel", milestones: "", resetOnFail: false });
+	const dashboardMessage = fakeMessage({ id: "A", content: "12", channelId: "dashboard-channel" });
+	await emitEvent("messageCreate", dashboardMessage);
+	assert((await getData()).count === 12, "dashboard channel setting is used by the registered event");
+	await cmd.execute({
+		guildId: GUILD,
+		options: { getSubcommand: () => "channel", getChannel: () => ({ id: CHAN }) },
+		reply: async () => {},
+		deferReply: async () => {},
+		editReply: async () => {},
+	});
+	const commandConfig = (await ctx.db.getPluginConfig(GUILD, "adb-plugin-counting")).data;
+	assert(commandConfig.channel === CHAN && commandConfig.resetOnFail === false, "channel command updates dashboard config without erasing other settings");
+	await ctx.db.updatePluginConfig("fresh-guild", "adb-plugin-counting", { channel: "dashboard-only" });
+	await emitEvent("messageCreate", fakeMessage({ guildId: "fresh-guild", channelId: "dashboard-only", content: "1" }));
+	assert((await Model.findOne({ guildId: "fresh-guild" }))?.count === 1, "dashboard-only setup initializes real schema defaults on first count");
+	await ctx.db.updatePluginConfig(GUILD, "adb-plugin-counting", { channel: CHAN, resetOnFail: true });
+	const unsafe = fakeMessage({ content: "9007199254740992" });
+	await emitEvent("messageCreate", unsafe);
+	assert(unsafe._calls.deleted && (await getData()).count === 12, "unsafe integer text cannot corrupt or reset the count");
+	assert(errors.length === 1, "Discord failure is logged once without abandoning later messages");
+
+	await ctx.db.updatePluginConfig(GUILD, "adb-plugin-counting", { channel: null });
+	const clearedChannel = fakeMessage({ id: "B", content: "13" });
+	await emitEvent("messageCreate", clearedChannel);
+	assert((await getData()).count === 12 && !clearedChannel._calls.deleted && clearedChannel._calls.reacted.length === 0, "clearing the dashboard channel with null does not reactivate the legacy channel");
+	await Model.updateOne({ guildId: GUILD }, { count: 12, lastUserId: "A" });
+	await ctx.db.updatePluginConfig(GUILD, "adb-plugin-counting", {});
+	await emitEvent("messageCreate", fakeMessage({ id: "B", content: "13" }));
+	assert((await getData()).count === 13, "an absent dashboard channel still uses the legacy channel");
 
 	console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
 	process.exit(failed > 0 ? 1 : 0);
