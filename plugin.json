@@ -1,7 +1,7 @@
 {
 	"name": "adb-plugin-counting",
 	"displayName": "Counting",
-	"version": "1.3.0",
+	"version": "1.3.1",
 	"description": "Number counting game. Users take turns counting sequentially. Wrong numbers or double-posting resets the count.",
 	"author": "DeadIndian",
 	"main": "index.js",
