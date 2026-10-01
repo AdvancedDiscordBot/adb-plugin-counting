@@ -23,6 +23,11 @@ Number counting game for your Discord server. Members take turns counting up one
 | `resetOnFail` | true | Reset to 0 on wrong count |
 | `milestones` | `10,25,50,100,250,500,1000` | Milestone numbers |
 
+Dashboard settings are read on each message; existing counting records remain the
+fallback channel configuration. Messages and admin commands are ordered within
+the plugin process, so a guild should be handled by only one process. Guild state
+and per-user statistics are separate database writes, not a transaction.
+
 ## License
 
 This project is licensed under the **GNU Affero General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
